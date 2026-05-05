@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>发卡商城 - 精选虚拟商品</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --primary: #6366f1; --secondary: #8b5cf6; --dark: #0f172a; --card: #1e293b; --text: #f8fafc; --text2: #94a3b8; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: var(--dark); color: var(--text); font-family: system-ui; min-height: 100vh; }
+        
+        .navbar { background: rgba(15,23,42,0.95); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .navbar-brand { font-weight: 700; font-size: 1.5rem; background: linear-gradient(135deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .nav-link { color: var(--text2) !important; transition: all 0.3s; }
+        .nav-link:hover { color: var(--text) !important; }
+        
+        .hero-section { background: linear-gradient(135deg, rgba(99,102,241,0.2), rgba(139,92,246,0.2)); padding: 60px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .search-box { background: var(--card); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 8px 16px; max-width: 500px; }
+        .search-box input { background: transparent; border: none; color: var(--text); width: 100%; outline: none; }
+        
+        .sidebar { background: var(--card); border-radius: 16px; padding: 20px; position: sticky; top: 90px; }
+        .category-item { padding: 12px 16px; border-radius: 8px; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; gap: 10px; color: var(--text2); }
+        .category-item:hover, .category-item.active { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; }
+        
+        .product-card { background: var(--card); border-radius: 16px; overflow: hidden; transition: all 0.3s; border: 1px solid rgba(255,255,255,0.05); height: 100%; display: flex; flex-direction: column; }
+        .product-card:hover { transform: translateY(-5px); border-color: var(--primary); box-shadow: 0 20px 40px rgba(99,102,241,0.2); }
+        .product-image { width: 100%; height: 180px; object-fit: cover; background: linear-gradient(135deg, #1e293b, #334155); }
+        .product-body { padding: 16px; flex: 1; display: flex; flex-direction: column; }
+        .product-title { font-size: 1rem; font-weight: 600; margin-bottom: 8px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .product-price { margin-top: auto; display: flex; justify-content: space-between; align-items: center; }
+        .price { font-size: 1.25rem; font-weight: 700; color: #10b981; }
+        .btn-buy { background: linear-gradient(135deg, var(--primary), var(--secondary)); border: none; padding: 8px 20px; border-radius: 8px; font-weight: 600; }
+        
+        .badge-hot { background: linear-gradient(135deg, #f59e0b, #ef4444); color: white; padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; position: absolute; top: 12px; left: 12px; }
+        
+        .modal-content { background: var(--card); border: 1px solid rgba(255,255,255,0.1); }
+        .form-control { background: var(--dark); border: 1px solid rgba(255,255,255,0.1); color: var(--text); }
+        .form-control:focus { background: var(--dark); border-color: var(--primary); color: var(--text); }
+        
+        .payment-btn { padding: 10px 16px; border-radius: 8px; }
+        .payment-btn.active { border-width: 2px; }
+        
+        .db-status-btn { position: fixed; bottom: 20px; right: 20px; padding: 10px 16px; background: var(--card); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; color: var(--text2); cursor: pointer; z-index: 1000; }
+        .db-status-btn.connected { border-color: #10b981; color: #10b981; }
+        
+        .product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 20px; }
+        .notice-bar { background: linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.1)); border-radius: 12px; padding: 16px; margin-bottom: 24px; border: 1px solid rgba(99,102,241,0.2); }
+        .footer { background: var(--card); padding: 40px 0; margin-top: 60px; border-top: 1px solid rgba(255,255,255,0.1); }
+
+        /* 加载动画 */
+        .loading-skeleton { animation: pulse 1.5s ease-in-out infinite; background: linear-gradient(90deg, var(--card) 25%, #2d3748 50%, var(--card) 75%); background-size: 200% 100%; border-radius: 8px; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        .product-card { animation: fadeInUp 0.5s ease-out; }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* 按钮悬停效果 */
+        .btn-buy { position: relative; overflow: hidden; transition: all 0.3s; }
+        .btn-buy::before { content: ''; position: absolute; top: 50%; left: 50%; width: 0; height: 0; border-radius: 50%; background: rgba(255,255,255,0.3); transform: translate(-50%, -50%); transition: width 0.6s, height 0.6s; }
+        .btn-buy:hover::before { width: 300px; height: 300px; }
+        
+        /* Toast 通知 */
+        .toast-notification { position: fixed; top: 20px; right: 20px; padding: 16px 24px; background: var(--card); border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); z-index: 9999; animation: slideInRight 0.3s ease-out; border-left: 4px solid var(--primary); }
+        @keyframes slideInRight { from { transform: translateX(400px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+        @media (max-width: 768px) { .sidebar { position: static; margin-bottom: 20px; } }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark sticky-top">
+        <div class="container">
+            <a class="navbar-brand" href="#"><i class="bi bi-shop"></i> 发卡商城</a>
+            <div class="collapse navbar-collapse">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item"><a class="nav-link active" href="#"><i class="bi bi-house"></i> 首页</a></li>
+                    <li class="nav-item"><a class="nav-link" href="admin/index.html" target="_blank"><i class="bi bi-gear"></i> 管理后台</a></li>
+                </ul>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="badge bg-warning text-dark" id="demoBadge" style="display:none;"><i class="bi bi-eye"></i> 演示模式</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <section class="hero-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-lg-6">
+                    <h1 class="display-5 fw-bold mb-3">精选虚拟商品</h1>
+                    <p class="text-secondary mb-4">海量商品，自动发货，即买即用</p>
+                </div>
+                <div class="col-lg-6">
+                    <div class="search-box d-flex align-items-center gap-2 mx-auto mx-lg-0 ms-lg-auto">
+                        <i class="bi bi-search text-secondary"></i>
+                        <input type="text" placeholder="搜索商品名称..." id="searchInput">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="container py-4">
+        <div class="notice-bar d-flex align-items-center gap-3">
+            <i class="bi bi-megaphone-fill fs-4" style="color: var(--primary);"></i>
+            <div><strong>温馨提示：</strong>商品购买后自动发货，请妥善保管订单号。如有问题请联系客服。</div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-3 mb-4">
+                <div class="sidebar">
+                    <h6 class="text-uppercase text-secondary mb-3 fw-bold"><i class="bi bi-collection"></i> 商品分类</h6>
+                    <div id="categoryList">
+                        <div class="category-item active" onclick="filterCategory(this, 'all')">
+                            <i class="bi bi-grid-3x3-gap"></i> 全部商品
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-lg-9">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h5 class="fw-bold"><i class="bi bi-fire text-danger"></i> 热门商品</h5>
+                </div>
+                <div class="product-grid" id="productGrid">
+                    <div class="col-12 text-center text-secondary py-5">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <p class="mt-2">正在加载商品...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="buyModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-cart-check"></i> 确认购买</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">商品名称</label>
+                        <input type="text" class="form-control" id="modalProductName" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">商品价格</label>
+                        <input type="text" class="form-control" id="modalProductPrice" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">购买数量</label>
+                        <input type="number" class="form-control" id="quantity" value="1" min="1" onchange="updateTotal()">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">联系方式 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="contactInput" placeholder="QQ号或邮箱" required>
+                    </div>
+                    <hr style="border-color: rgba(255,255,255,0.1);">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span>应付金额：</span>
+                        <span class="fs-4 text-success fw-bold" id="totalPrice">¥0.00</span>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">选择支付方式</label>
+                        <div class="d-flex flex-wrap gap-2" id="paymentMethods">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="submitOrder()">
+                        <i class="bi bi-check-circle"></i> 确认支付
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button class="db-status-btn" id="dbStatusBtn" onclick="showConnectModal()">
+        <i class="bi bi-cloud"></i> 未连接数据库
+    </button>
+
+    <script src="js/supabase.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // HTML转义函数，防止XSS
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(text));
+            return div.innerHTML;
+        }
+        let currentProduct = null;
+        let currentPrice = 0;
+        let selectedPayment = 'nexapay';
+        let allProducts = [];
+        let categories = [];
+        let isDemoMode = false; // 演示模式标志
+
+        const PAYMENT_METHODS = [
+            { type: 'nexapay', name: 'USDT', icon: '₿', class: 'warning' },
+            { type: 'stripe', name: '信用卡', icon: '💳', class: 'primary' },
+            { type: 'paypal', name: 'PayPal', icon: '🅿️', class: 'info' },
+        ];
+
+        // 演示模式Mock数据
+        const DEMO_PRODUCTS = [
+            {
+                id: 1,
+                name: 'Netflix VIP会员月卡',
+                price: 29.99,
+                original_price: 49.99,
+                description: 'Netflix高级会员，4K画质，支持多设备同时观看',
+                category_id: 1,
+                image: '🎬',
+                stock: 999,
+                auto_deliver: true,
+                sales: 156,
+                hot: true,
+                status: 'active',
+                categories: { id: 1, name: 'VIP会员', slug: 'vip', icon: '🎬' }
+            },
+            {
+                id: 2,
+                name: 'Spotify Premium账号',
+                price: 19.99,
+                original_price: 39.99,
+                description: 'Spotify高级会员，无损音质，无广告',
+                category_id: 2,
+                image: '🎵',
+                stock: 500,
+                auto_deliver: true,
+                sales: 89,
+                hot: true,
+                status: 'active',
+                categories: { id: 2, name: '账号类', slug: 'account', icon: '👤' }
+            },
+            {
+                id: 3,
+                name: 'ChatGPT Plus代充',
+                price: 149.00,
+                original_price: 199.00,
+                description: 'ChatGPT Plus一个月会员，GPT-4优先体验',
+                category_id: 1,
+                image: '🤖',
+                stock: 50,
+                auto_deliver: true,
+                sales: 234,
+                hot: true,
+                status: 'active',
+                categories: { id: 1, name: 'VIP会员', slug: 'vip', icon: '🎬' }
+            },
+            {
+                id: 4,
+                name: 'Adobe全家桶激活码',
+                price: 59.99,
+                original_price: 129.99,
+                description: 'Adobe Creative Cloud全套软件一年使用权',
+                category_id: 3,
+                image: '🎨',
+                stock: 200,
+                auto_deliver: true,
+                sales: 67,
+                hot: false,
+                status: 'active',
+                categories: { id: 3, name: '卡密类', slug: 'card', icon: '🔑' }
+            },
+            {
+                id: 5,
+                name: 'Steam游戏礼包',
+                price: 99.00,
+                original_price: 199.00,
+                description: '包含10款热门独立游戏激活码',
+                category_id: 3,
+                image: '🎮',
+                stock: 100,
+                auto_deliver: true,
+                sales: 45,
+                hot: false,
+                status: 'active',
+                categories: { id: 3, name: '卡密类', slug: 'card', icon: '🔑' }
+            },
+            {
+                id: 6,
+                name: '1TB云存储空间',
+                price: 39.99,
+                original_price: 79.99,
+                description: 'Google Drive/OneDrive 1TB空间一年',
+                category_id: 4,
+                image: '☁️',
+                stock: 300,
+                auto_deliver: true,
+                sales: 123,
+                hot: true,
+                status: 'active',
+                categories: { id: 4, name: '下载类', slug: 'download', icon: '📥' }
+            }
+        ];
+
+        const DEMO_CATEGORIES = [
+            { id: 1, name: 'VIP会员', slug: 'vip', icon: '🎬', sort_order: 1 },
+            { id: 2, name: '账号类', slug: 'account', icon: '👤', sort_order: 2 },
+            { id: 3, name: '卡密类', slug: 'card', icon: '🔑', sort_order: 3 },
+            { id: 4, name: '下载类', slug: 'download', icon: '📥', sort_order: 4 },
+            { id: 5, name: '其他商品', slug: 'other', icon: '📦', sort_order: 5 }
+        ];
+
+        async function init() {
+            // 检查URL参数是否启用演示模式
+            const urlParams = new URLSearchParams(window.location.search);
+            isDemoMode = urlParams.get('demo') === 'true' || localStorage.getItem('demo_mode') === 'true';
+
+            if (isDemoMode) {
+                // 演示模式：使用Mock数据
+                console.log('🎭 演示模式已启用');
+                document.getElementById('demoBadge').style.display = 'inline-block';
+                allProducts = DEMO_PRODUCTS;
+                categories = DEMO_CATEGORIES;
+                renderCategories();
+                renderProducts(allProducts);
+                renderPaymentMethods();
+                updateDbStatusDemo();
+                return;
+            }
+
+            // 正常模式：尝试连接数据库
+            if (!window.supabaseClient.isConnected()) {
+                window.supabaseClient.initSupabase && window.supabaseClient.initSupabase();
+            }
+
+            updateDbStatus();
+
+            if (window.supabaseClient.isConnected()) {
+                await loadProducts();
+                await loadCategories();
+                renderPaymentMethods();
+            }
+        }
+
+        function updateDbStatusDemo() {
+            const btn = document.getElementById('dbStatusBtn');
+            btn.classList.add('connected');
+            btn.innerHTML = '<i class="bi bi-eye"></i> 演示模式';
+            btn.onclick = () => {
+                if (confirm('当前为演示模式，显示的是示例数据。\n\n是否切换到正常模式连接数据库？')) {
+                    localStorage.removeItem('demo_mode');
+                    location.reload();
+                }
+            };
+        }
+
+        function updateDbStatus() {
+            const btn = document.getElementById('dbStatusBtn');
+            if (window.supabaseClient.isConnected()) {
+                btn.classList.add('connected');
+                btn.innerHTML = '<i class="bi bi-cloud-check"></i> 已连接';
+                btn.onclick = showConnectModal; // 已连接时点击显示管理后台链接
+            } else {
+                btn.classList.remove('connected');
+                btn.innerHTML = '<i class="bi bi-cloud"></i> 未连接数据库';
+                // 未连接时，点击提示用户（但不是强制）
+                btn.onclick = () => {
+                    if (confirm('当前未连接数据库，无法购买商品。\n\n如需购买，请点击"确定"连接数据库。\n管理员请访问 /admin/ 登录后台。')) {
+                        showConnectModal();
+                    }
+                };
+            }
+        }
+
+        function showConnectModal() {
+            window.supabaseClient.showConnectModal().then(connected => {
+                updateDbStatus();
+                if (connected) {
+                    loadProducts();
+                    loadCategories();
+                }
+            });
+        }
+
+        async function loadProducts() {
+            const supabase = window.supabaseClient.getClient();
+            const { data, error } = await supabase.functions.invoke('get-products', {
+                body: { limit: 200 }
+            });
+
+            if (error || !data?.success) {
+                console.error('加载商品失败:', error || data?.message);
+                const fallback = await supabase
+                    .from('products')
+                    .select('*, categories:category_id(id, name, slug, icon)')
+                    .eq('status', 'active')
+                    .order('created_at', { ascending: false });
+
+                if (fallback.error) {
+                    console.error('加载商品失败(回退):', fallback.error);
+                    return;
+                }
+
+                allProducts = fallback.data || [];
+                renderProducts(allProducts);
+                return;
+            }
+
+            allProducts = data.products || [];
+            renderProducts(allProducts);
+        }
+
+        async function loadCategories() {
+            const supabase = window.supabaseClient.getClient();
+            const { data } = await supabase.from('categories').select('*').order('sort_order');
+            categories = data || [];
+            renderCategories();
+        }
+
+        function renderCategories() {
+            const container = document.getElementById('categoryList');
+            let html = `<div class="category-item active" onclick="filterCategory(this, 'all')">
+                <i class="bi bi-grid-3x3-gap"></i> 全部商品
+            </div>`;
+            
+            categories.forEach(cat => {
+                const icon = cat.icon || '📦';
+                html += `<div class="category-item" onclick="filterCategory(this, '${cat.id}')">
+                    <i class="bi bi-grid-3x3-gap"></i> ${cat.name}
+                </div>`;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        function renderProducts(products) {
+            const grid = document.getElementById('productGrid');
+            
+            if (products.length === 0) {
+                grid.innerHTML = '<div class="col-12 text-center text-secondary py-5"><i class="bi bi-inbox fs-1 d-block mb-2"></i>暂无商品</div>';
+                return;
+            }
+            
+            grid.innerHTML = '';
+            products.forEach(product => {
+                const card = document.createElement('div');
+                card.className = 'product-card';
+                card.dataset.category = product.category_id || '';
+
+                const imgWrapper = document.createElement('div');
+                imgWrapper.className = 'position-relative';
+
+                if (product.image) {
+                    const img = document.createElement('img');
+                    img.src = product.image;
+                    img.alt = product.name || '商品图片';
+                    img.className = 'product-image';
+                    imgWrapper.appendChild(img);
+                } else {
+                    const placeholder = document.createElement('div');
+                    placeholder.className = 'product-image d-flex align-items-center justify-content-center';
+                    placeholder.style.fontSize = '3rem';
+                    placeholder.textContent = product.image || '📦';
+                    imgWrapper.appendChild(placeholder);
+                }
+
+                if (product.hot) {
+                    const badge = document.createElement('span');
+                    badge.className = 'badge-hot';
+                    badge.textContent = '热销';
+                    imgWrapper.appendChild(badge);
+                }
+
+                const body = document.createElement('div');
+                body.className = 'product-body';
+
+                const title = document.createElement('h6');
+                title.className = 'product-title';
+                title.textContent = product.name || '';
+                body.appendChild(title);
+
+                const priceRow = document.createElement('div');
+                priceRow.className = 'product-price';
+
+                const priceInfo = document.createElement('div');
+                const priceSpan = document.createElement('span');
+                priceSpan.className = 'price';
+                priceSpan.textContent = `¥${product.price || 0}`;
+                priceInfo.appendChild(priceSpan);
+
+                if (product.original_price) {
+                    const del = document.createElement('del');
+                    del.className = 'text-secondary ms-1';
+                    del.textContent = `¥${product.original_price}`;
+                    priceInfo.appendChild(del);
+                }
+
+                const buyBtn = document.createElement('button');
+                buyBtn.className = 'btn btn-buy btn-sm';
+                buyBtn.textContent = '购买';
+                buyBtn.onclick = () => showBuyModal(product.id, product.name, product.price);
+
+                priceRow.appendChild(priceInfo);
+                priceRow.appendChild(buyBtn);
+                body.appendChild(priceRow);
+
+                card.appendChild(imgWrapper);
+                card.appendChild(body);
+                grid.appendChild(card);
+            });
+        }
+
+        function renderPaymentMethods() {
+            const container = document.getElementById('paymentMethods');
+            let html = '';
+            PAYMENT_METHODS.forEach((pm, index) => {
+                html += `<button type="button" class="btn btn-outline-${pm.class} payment-btn ${index === 0 ? 'active' : ''}" onclick="selectPayment(this, '${pm.type}')">
+                    <i class="bi bi-${pm.type === 'nexapay' ? 'currency-bitcoin' : pm.type === 'stripe' ? 'credit-card' : 'paypal'}"></i> ${pm.name}
+                </button>`;
+            });
+            container.innerHTML = html;
+        }
+
+        function showBuyModal(id, name, price) {
+            // 演示模式允许直接体验
+            if (isDemoMode) {
+                currentProduct = { id, name, price };
+                document.getElementById('modalProductName').value = name;
+                document.getElementById('modalProductPrice').value = '¥' + price;
+                currentPrice = parseFloat(price);
+                updateTotal();
+                new bootstrap.Modal(document.getElementById('buyModal')).show();
+                return;
+            }
+
+            // 检查是否连接数据库
+            if (!window.supabaseClient.isConnected()) {
+                alert('请先连接数据库后才能购买商品');
+                showConnectModal();
+                return;
+            }
+            currentProduct = { id, name, price };
+            document.getElementById('modalProductName').value = name;
+            document.getElementById('modalProductPrice').value = '¥' + price;
+            currentPrice = parseFloat(price);
+            updateTotal();
+            new bootstrap.Modal(document.getElementById('buyModal')).show();
+        }
+
+        function updateTotal() {
+            const quantity = parseInt(document.getElementById('quantity').value) || 1;
+            const total = (currentPrice * quantity).toFixed(2);
+            document.getElementById('totalPrice').textContent = '¥' + total;
+        }
+
+        function selectPayment(btn, method) {
+            document.querySelectorAll('.payment-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            selectedPayment = method;
+        }
+
+        async function submitOrder() {
+            const contact = document.getElementById('contactInput').value.trim();
+            if (!contact) {
+                alert('请填写联系方式');
+                return;
+            }
+
+            // 演示模式模拟订单创建
+            if (isDemoMode) {
+                const quantity = parseInt(document.getElementById('quantity').value) || 1;
+                const orderNo = 'DEMO' + Date.now();
+                const totalPrice = (currentPrice * quantity).toFixed(2);
+
+                const mockOrder = {
+                    order_no: orderNo,
+                    product_id: currentProduct.id,
+                    product_name: currentProduct.name,
+                    price: currentPrice,
+                    quantity: quantity,
+                    total_price: totalPrice,
+                    contact: contact,
+                    payment_method: selectedPayment,
+                    payment_status: 'pending',
+                    status: 'pending',
+                    crypto_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+                    created_at: new Date().toISOString()
+                };
+
+                localStorage.setItem('current_order', JSON.stringify(mockOrder));
+                bootstrap.Modal.getInstance(document.getElementById('buyModal')).hide();
+
+                alert(`🎭 演示模式 - 订单创建成功！\n\n订单号: ${orderNo}\n商品: ${currentProduct.name}\n金额: ¥${totalPrice}\n\n您可以前往支付页面体验支付流程`);
+                window.location.href = `payment.html?order=${orderNo}&demo=true`;
+                return;
+            }
+
+            // 正常模式
+            if (!window.supabaseClient.isConnected()) {
+                alert('请先连接数据库');
+                return;
+            }
+
+            const quantity = parseInt(document.getElementById('quantity').value) || 1;
+            const supabase = window.supabaseClient.getClient();
+
+            const { data, error } = await supabase.functions.invoke('create-order', {
+                body: {
+                    productId: currentProduct.id,
+                    quantity,
+                    contact,
+                    paymentMethod: selectedPayment,
+                }
+            });
+
+            if (error || !data?.success) {
+                alert(data?.message || '创建订单失败');
+                return;
+            }
+
+            localStorage.setItem('current_order', JSON.stringify(data.order));
+
+            bootstrap.Modal.getInstance(document.getElementById('buyModal')).hide();
+
+            if (selectedPayment === 'nexapay' && data.payment?.cryptoAddress) {
+                alert(`订单创建成功！\n订单号: ${data.order.order_no}\n\n请向以下地址转账USDT:\n${data.payment.cryptoAddress}\n\n转账金额: ${data.payment.cryptoAmount} USDT`);
+            }
+
+            window.location.href = `payment.html?order=${data.order.order_no}`;
+        }
+
+        function filterCategory(el, category) {
+            document.querySelectorAll('.category-item').forEach(c => c.classList.remove('active'));
+            el.classList.add('active');
+            
+            const cards = document.querySelectorAll('.product-card');
+            cards.forEach(card => {
+                if (category === 'all' || card.dataset.category === category) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        }
+
+
+
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

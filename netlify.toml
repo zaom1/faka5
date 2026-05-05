@@ -1,0 +1,17 @@
+[build]
+  publish = "web"
+  command = "echo 'No build needed'"
+
+# 可选：自定义 HTTP 头
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+    X-Content-Type-Options = "nosniff"
+
+# 缓存静态资源
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"

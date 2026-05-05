@@ -1,0 +1,20 @@
+{
+  "name": "fakashop",
+  "version": "2.0.0",
+  "description": "一个基于 Supabase 的开源发卡系统，支持多种支付方式和演示模式",
+  "main": "server.py",
+  "scripts": {
+    "dev": "python3 server.py",
+    "demo": "python3 server.py",
+    "deploy": "netlify deploy --prod",
+    "deploy:functions": "bash scripts/deploy-functions.sh",
+    "setup": "bash scripts/deploy.sh env && bash scripts/deploy.sh sql"
+  },
+  "keywords": ["faka", "fakashop", "ecommerce", "supabase", "netlify", "demo", "virtual-goods"],
+  "author": "FakaShop Contributors",
+  "license": "MIT",
+  "devDependencies": {
+    "supabase": "^2.78.1",
+    "serve": "^14.2.0"
+  }
+}

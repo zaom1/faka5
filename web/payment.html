@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单支付 - 发卡商城</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        :root { --primary: #6366f1; --secondary: #8b5cf6; --dark: #0f172a; --card: #1e293b; --text: #f8fafc; --text2: #94a3b8; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: var(--dark); color: var(--text); font-family: system-ui; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .payment-card { background: var(--card); border-radius: 20px; padding: 40px; width: 100%; max-width: 500px; border: 1px solid rgba(255,255,255,0.1); }
+        .status-icon { width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin: 0 auto 20px; }
+        .status-pending { background: rgba(245,158,11,0.2); color: #fbbf24; }
+        .status-success { background: rgba(16,185,129,0.2); color: #34d399; }
+        .status-failed { background: rgba(239,68,68,0.2); color: #f87171; }
+        .info-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .info-label { color: var(--text2); }
+        .info-value { font-weight: 600; }
+        .card-content { background: #0f172a; border: 1px solid rgba(99,102,241,0.3); border-radius: 12px; padding: 16px; font-family: monospace; word-break: break-all; margin-top: 12px; }
+        .crypto-box { background: #0f172a; border: 1px solid rgba(245,158,11,0.3); border-radius: 12px; padding: 20px; margin-top: 20px; }
+        .crypto-address { font-family: monospace; font-size: 0.9rem; word-break: break-all; background: rgba(0,0,0,0.3); padding: 12px; border-radius: 8px; margin: 12px 0; cursor: pointer; }
+        .btn-primary { background: linear-gradient(135deg, var(--primary), var(--secondary)); border: none; padding: 12px 24px; border-radius: 10px; font-weight: 600; }
+        .db-status-btn { position: fixed; bottom: 20px; right: 20px; padding: 10px 16px; background: var(--card); border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; color: var(--text2); cursor: pointer; }
+        .db-status-btn.connected { border-color: #10b981; color: #10b981; }
+    </style>
+</head>
+<body>
+    <div class="payment-card" id="paymentCard">
+        <div class="text-center">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-3">正在加载订单...</p>
+        </div>
+    </div>
+
+    <button class="db-status-btn" id="dbStatusBtn" onclick="showConnectModal()">
+        <i class="bi bi-cloud"></i> 未连接
+    </button>
+
+    <script src="js/supabase.js"></script>
+    <script>
+        const urlParams = new URLSearchParams(window.location.search);
+        const orderNo = urlParams.get('order');
+        const isDemoMode = urlParams.get('demo') === 'true';
+
+        async function init() {
+            if (isDemoMode) {
+                // 演示模式：使用Mock订单数据
+                console.log('🎭 支付页面 - 演示模式');
+                await loadDemoOrder();
+                return;
+            }
+
+            if (!window.supabaseClient.isConnected()) {
+                await window.supabaseClient.showConnectModal();
+            }
+            updateDbStatus();
+
+            if (orderNo) {
+                await loadOrder();
+            } else {
+                showError('缺少订单号');
+            }
+        }
+
+        async function loadDemoOrder() {
+            // 尝试从localStorage获取订单，或创建演示订单
+            let order = JSON.parse(localStorage.getItem('current_order') || 'null');
+            
+            if (!order && orderNo) {
+                order = {
+                    order_no: orderNo,
+                    product_name: 'Netflix VIP会员月卡',
+                    quantity: 1,
+                    total_price: '29.99',
+                    contact: 'demo@example.com',
+                    payment_method: 'nexapay',
+                    payment_status: 'pending',
+                    status: 'pending',
+                    crypto_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+                    card_content: 'DEMO-CARD-1234-5678-9012\n账号: demo@netflix.com\n密码: DemoPass123'
+                };
+            }
+
+            if (!order) {
+                showError('订单不存在');
+                return;
+            }
+
+            renderDemoOrder(order);
+        }
+
+        function renderDemoOrder(order) {
+            const card = document.getElementById('paymentCard');
+            const status = order.payment_status;
+
+            let statusHtml = '';
+            let statusClass = '';
+
+            if (status === 'paid') {
+                statusClass = 'status-success';
+                statusHtml = '<i class="bi bi-check-circle"></i>';
+            } else if (status === 'failed') {
+                statusClass = 'status-failed';
+                statusHtml = '<i class="bi bi-x-circle"></i>';
+            } else {
+                statusClass = 'status-pending';
+                statusHtml = '<i class="bi bi-clock"></i>';
+            }
+
+            const statusText = { pending: '等待支付（演示）', paid: '支付成功', failed: '支付失败' }[status];
+
+            let content = `
+                <div class="text-center">
+                    <div class="status-icon ${statusClass}">${statusHtml}</div>
+                    <h4>${statusText}</h4>
+                    <p class="text-secondary">订单号: ${order.order_no}</p>
+                    <span class="badge bg-warning">🎭 演示模式</span>
+                </div>
+
+                <div class="mt-4">
+                    <div class="info-row">
+                        <span class="info-label">商品名称</span>
+                        <span class="info-value">${order.product_name}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">购买数量</span>
+                        <span class="info-value">${order.quantity}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">支付方式</span>
+                        <span class="info-value">${order.payment_method}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">订单金额</span>
+                        <span class="info-value text-success">¥${order.total_price}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">联系方式</span>
+                        <span class="info-value">${order.contact}</span>
+                    </div>
+                </div>
+            `;
+
+            if (status === 'paid' && order.card_content) {
+                content += `
+                    <div class="mt-4">
+                        <h6 class="text-success"><i class="bi bi-check-circle"></i> 您的卡密</h6>
+                        <div class="card-content">${order.card_content}</div>
+                        <p class="text-secondary mt-2" style="font-size: 0.85rem;">请妥善保管，复制或截图保存</p>
+                    </div>
+                `;
+            }
+
+            if (status === 'pending' && order.payment_method === 'nexapay') {
+                const cryptoAddr = order.crypto_address || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+                content += `
+                    <div class="crypto-box">
+                        <h6><i class="bi bi-currency-bitcoin text-warning"></i> 请向以下地址转账</h6>
+                        <p class="text-secondary" style="font-size: 0.85rem;">请转账 exact 金额的 USDT (TRC20)</p>
+                        <div class="crypto-address" id="cryptoAddress" onclick="copyToClipboard(this)">${cryptoAddr}</div>
+                        <div class="text-center">
+                            <button class="btn btn-sm btn-outline-warning" onclick="copyToClipboard(this.previousElementSibling)">
+                                <i class="bi bi-clipboard"></i> 复制地址
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (status === 'pending') {
+                content += `
+                    <div class="mt-4 text-center">
+                        <p class="text-secondary">演示模式：此处模拟支付流程</p>
+                        <button class="btn btn-success btn-sm me-2" onclick="simulatePaymentSuccess()">
+                            <i class="bi bi-check-circle"></i> 模拟支付成功
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="location.reload()">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新
+                        </button>
+                    </div>
+                `;
+            }
+
+            card.innerHTML = content;
+        }
+
+        function simulatePaymentSuccess() {
+            let order = JSON.parse(localStorage.getItem('current_order') || '{}');
+            order.payment_status = 'paid';
+            order.paid_at = new Date().toISOString();
+            order.card_content = 'DEMO-CARD-' + Math.random().toString(36).substr(2, 8).toUpperCase() + '\n账号: vip' + Math.floor(Math.random() * 1000) + '@demo.com\n密码: Pass' + Math.random().toString(36).substr(2, 6);
+            localStorage.setItem('current_order', JSON.stringify(order));
+            renderDemoOrder(order);
+        }
+
+        function updateDbStatus() {
+            const btn = document.getElementById('dbStatusBtn');
+            if (window.supabaseClient.isConnected()) {
+                btn.classList.add('connected');
+                btn.innerHTML = '<i class="bi bi-cloud-check"></i> 已连接';
+            }
+        }
+
+        function showConnectModal() {
+            window.supabaseClient.showConnectModal().then(connected => {
+                updateDbStatus();
+                if (connected) loadOrder();
+            });
+        }
+
+        async function loadOrder() {
+            const supabase = window.supabaseClient.getClient();
+            
+            const { data, error } = await supabase.functions.invoke('get-order', {
+                body: { order_no: orderNo }
+            });
+
+            if (error || !data?.success) {
+                showError('订单不存在');
+                return;
+            }
+
+            const order = data.order;
+            renderOrder(order);
+            
+            if (order.payment_status === 'pending') {
+                setInterval(() => checkOrderStatus(), 5000);
+            }
+        }
+
+        async function checkOrderStatus() {
+            const supabase = window.supabaseClient.getClient();
+            const { data } = await supabase.functions.invoke('get-order', {
+                body: { order_no: orderNo }
+            });
+
+            if (data?.success && data.order.payment_status === 'paid') {
+                renderOrder(data.order);
+            }
+        }
+
+        function renderOrder(order) {
+            const card = document.getElementById('paymentCard');
+            const status = order.payment_status;
+            
+            let statusHtml = '';
+            let statusClass = '';
+            
+            if (status === 'paid') {
+                statusClass = 'status-success';
+                statusHtml = '<i class="bi bi-check-circle"></i>';
+            } else if (status === 'failed') {
+                statusClass = 'status-failed';
+                statusHtml = '<i class="bi bi-x-circle"></i>';
+            } else {
+                statusClass = 'status-pending';
+                statusHtml = '<i class="bi bi-clock"></i>';
+            }
+
+            const statusText = { pending: '等待支付', paid: '支付成功', failed: '支付失败' }[status];
+
+            let content = `
+                <div class="text-center">
+                    <div class="status-icon ${statusClass}">${statusHtml}</div>
+                    <h4>${statusText}</h4>
+                    <p class="text-secondary">订单号: ${order.order_no}</p>
+                </div>
+                
+                <div class="mt-4">
+                    <div class="info-row">
+                        <span class="info-label">商品名称</span>
+                        <span class="info-value">${order.product_name}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">购买数量</span>
+                        <span class="info-value">${order.quantity}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">支付方式</span>
+                        <span class="info-value">${order.payment_method}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">订单金额</span>
+                        <span class="info-value text-success">¥${order.total_price}</span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">联系方式</span>
+                        <span class="info-value">${order.contact}</span>
+                    </div>
+                </div>
+            `;
+
+            if (status === 'paid' && order.card_content) {
+                content += `
+                    <div class="mt-4">
+                        <h6 class="text-success"><i class="bi bi-check-circle"></i> 您的卡密</h6>
+                        <div class="card-content">${order.card_content}</div>
+                        <p class="text-secondary mt-2" style="font-size: 0.85rem;">请妥善保管，复制或截图保存</p>
+                    </div>
+                `;
+            }
+
+            if (status === 'pending' && order.payment_method === 'nexapay') {
+                const cryptoAddr = order.crypto_address || 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
+                content += `
+                    <div class="crypto-box">
+                        <h6><i class="bi bi-currency-bitcoin text-warning"></i> 请向以下地址转账</h6>
+                        <p class="text-secondary" style="font-size: 0.85rem;">请转账 exact 金额的 USDT (TRC20)</p>
+                        <div class="crypto-address" id="cryptoAddress" onclick="copyToClipboard(this)">${cryptoAddr}</div>
+                        <div class="text-center">
+                            <button class="btn btn-sm btn-outline-warning" onclick="copyToClipboard(this.previousElementSibling)">
+                                <i class="bi bi-clipboard"></i> 复制地址
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }
+
+            if (status === 'pending') {
+                content += `
+                    <div class="mt-4 text-center">
+                        <p class="text-secondary">如已完成支付，请稍等片刻系统确认</p>
+                        <button class="btn btn-outline-secondary btn-sm" onclick="loadOrder()">
+                            <i class="bi bi-arrow-clockwise"></i> 刷新状态
+                        </button>
+                    </div>
+                `;
+            }
+
+            card.innerHTML = content;
+        }
+
+        function showError(msg) {
+            document.getElementById('paymentCard').innerHTML = `
+                <div class="text-center">
+                    <div class="status-icon status-failed"><i class="bi bi-x-circle"></i></div>
+                    <h4>${msg}</h4>
+                    <a href="index.html" class="btn btn-primary mt-3">返回首页</a>
+                </div>
+            `;
+        }
+
+        function copyToClipboard(element) {
+            const text = element.textContent || element.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                alert('已复制到剪贴板');
+            });
+        }
+
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

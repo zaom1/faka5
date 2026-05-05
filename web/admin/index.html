@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理后台 - 发卡商城</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root { --primary: #6366f1; --secondary: #8b5cf6; --dark: #0f172a; --card: #1e293b; --text: #f8fafc; --text2: #94a3b8; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: var(--dark); color: var(--text); font-family: system-ui; min-height: 100vh; }
+        
+        .login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.1)); padding: 20px; }
+        .login-card { background: var(--card); border-radius: 20px; padding: 40px; width: 100%; max-width: 420px; border: 1px solid rgba(255,255,255,0.1); }
+        .login-header { text-align: center; margin-bottom: 30px; }
+        .login-header i { font-size: 3rem; background: linear-gradient(135deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        
+        .form-control, .form-select { background: var(--dark); border: 1px solid rgba(255,255,255,0.1); color: var(--text); padding: 12px 16px; border-radius: 10px; }
+        .form-control:focus { background: var(--dark); border-color: var(--primary); }
+        
+        .btn-primary { background: linear-gradient(135deg, var(--primary), var(--secondary)); border: none; padding: 12px; border-radius: 10px; font-weight: 600; }
+        
+
+        .dashboard { display: none; }
+        .sidebar { background: var(--card); min-height: 100vh; padding: 20px; border-right: 1px solid rgba(255,255,255,0.1); position: fixed; width: 240px; height: 100vh; overflow-y: auto; }
+        .sidebar-brand { font-size: 1.3rem; font-weight: 700; background: linear-gradient(135deg, var(--primary), var(--secondary)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; padding: 15px 0; display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+        
+        .nav-item { padding: 12px 16px; border-radius: 10px; cursor: pointer; transition: all 0.3s; display: flex; align-items: center; gap: 12px; color: var(--text2); margin-bottom: 5px; text-decoration: none; }
+        .nav-item:hover, .nav-item.active { background: linear-gradient(135deg, var(--primary), var(--secondary)); color: white; }
+        
+        .stat-card { background: var(--card); border-radius: 16px; padding: 24px; border: 1px solid rgba(255,255,255,0.05); }
+        
+        .table { color: var(--text); }
+        .table thead th { background: var(--dark); border-color: rgba(255,255,255,0.1); color: var(--text2); font-weight: 600; }
+        .table td { border-color: rgba(255,255,255,0.1); vertical-align: middle; }
+        .table tbody tr:hover { background: rgba(99,102,241,0.1); }
+        
+        .modal-content { background: var(--card); border: 1px solid rgba(255,255,255,0.1); }
+        
+        .db-status { position: fixed; bottom: 20px; right: 20px; padding: 8px 16px; background: var(--card); border-radius: 20px; font-size: 0.85rem; z-index: 1000; }
+        .db-status.connected { border: 1px solid #10b981; color: #10b981; }
+        .db-status.disconnected { border: 1px solid rgba(255,255,255,0.1); color: var(--text2); cursor: pointer; }
+        
+        .main-content { margin-left: 240px; padding: 20px; min-height: 100vh; }
+        
+        .badge-status { padding: 5px 10px; border-radius: 15px; font-size: 0.75rem; }
+        .badge-pending { background: rgba(245,158,11,0.2); color: #fbbf24; }
+        .badge-paid { background: rgba(16,185,129,0.2); color: #34d399; }
+        .badge-completed { background: rgba(16,185,129,0.2); color: #34d399; }
+        .badge-failed, .badge-cancelled { background: rgba(239,68,68,0.2); color: #f87171; }
+    </style>
+</head>
+<body>
+    <div class="login-container" id="loginPage">
+        <div class="login-card">
+            <div class="login-header">
+                <i class="bi bi-shield-lock"></i>
+                <h4 class="mt-3">管理后台</h4>
+                <p class="text-secondary">请输入账号密码登录</p>
+                <div id="demoHint" class="alert alert-info" style="display:none;">
+                    <i class="bi bi-info-circle"></i> 演示模式：使用本地验证，无需数据库<br>
+                    <strong>账号: demo | 密码: Demo@123456</strong>
+                </div>
+                <div id="dbConnecting" class="alert alert-secondary" style="display:none;">
+                    <span class="spinner-border spinner-border-sm me-2"></span>正在连接数据库...
+                </div>
+            </div>
+            <div class="alert alert-danger" id="loginError" style="display: none;"></div>
+            <form id="loginForm">
+                <div class="mb-3"><label class="form-label">用户名</label><input type="text" class="form-control" id="username" placeholder="请输入用户名" required></div>
+                <div class="mb-3"><label class="form-label">密码</label><input type="password" class="form-control" id="password" placeholder="请输入密码" required></div>
+
+                <button type="submit" class="btn btn-primary w-100" id="loginBtn"><i class="bi bi-box-arrow-in-right me-2"></i>登录</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="dashboard" id="dashboard">
+        <div class="sidebar">
+            <div class="sidebar-brand"><i class="bi bi-shield-check"></i><span>管理后台</span></div>
+            
+            <a href="#" class="nav-item active" onclick="showPage('overview')"><i class="bi bi-grid-1x2"></i> 概览</a>
+            <a href="#" class="nav-item" onclick="showPage('products')"><i class="bi bi-box-seam"></i> 商品管理</a>
+            <a href="#" class="nav-item" onclick="showPage('orders')"><i class="bi bi-receipt"></i> 订单管理</a>
+            <a href="#" class="nav-item" onclick="showPage('cards')"><i class="bi bi-key"></i> 卡密管理</a>
+            <a href="#" class="nav-item" onclick="showPage('categories')"><i class="bi bi-tags"></i> 分类管理</a>
+            <a href="#" class="nav-item" onclick="showPage('payments')"><i class="bi bi-credit-card"></i> 支付配置</a>
+            <a href="#" class="nav-item" onclick="showPage('security')"><i class="bi bi-shield-lock"></i> 安全设置</a>
+            
+            <div class="mt-auto pt-3" style="border-top:1px solid rgba(255,255,255,0.1)">
+                <a href="#" class="nav-item" onclick="logout()"><i class="bi bi-box-arrow-left"></i> 退出登录</a>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div id="page-overview">
+                <h4 class="mb-4"><i class="bi bi-grid-1x2 me-2"></i>数据概览</h4>
+                <div class="row g-4 mb-4">
+                    <div class="col-md-3"><div class="stat-card"><p class="text-secondary mb-1">商品总数</p><div class="fs-2 fw-bold" id="totalProducts">0</div></div></div>
+                    <div class="col-md-3"><div class="stat-card"><p class="text-secondary mb-1">待处理订单</p><div class="fs-2 fw-bold" id="pendingOrders">0</div></div></div>
+                    <div class="col-md-3"><div class="stat-card"><p class="text-secondary mb-1">总订单数</p><div class="fs-2 fw-bold" id="totalOrders">0</div></div></div>
+                    <div class="col-md-3"><div class="stat-card"><p class="text-secondary mb-1">总收入</p><div class="fs-2 fw-bold text-success">¥<span id="totalRevenue">0</span></div></div></div>
+                </div>
+            </div>
+            
+            <div id="page-products" style="display:none">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4><i class="bi bi-box-seam me-2"></i>商品管理</h4>
+                    <button class="btn btn-success" onclick="addProduct()"><i class="bi bi-plus-lg me-1"></i>添加商品</button>
+                </div>
+                <div class="stat-card">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead><tr><th>ID</th><th>商品</th><th>分类</th><th>价格</th><th>库存</th><th>销量</th><th>状态</th><th>操作</th></tr></thead>
+                            <tbody id="productTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="page-orders" style="display:none">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4><i class="bi bi-receipt me-2"></i>订单管理</h4>
+                    <select class="form-select" id="orderStatusFilter" style="width:auto" onchange="loadOrders()">
+                        <option value="all">全部订单</option>
+                        <option value="pending">待处理</option>
+                        <option value="paid">已支付</option>
+                        <option value="completed">已完成</option>
+                        <option value="cancelled">已取消</option>
+                    </select>
+                </div>
+                <div class="stat-card">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead><tr><th>订单号</th><th>商品</th><th>金额</th><th>联系方式</th><th>支付状态</th><th>订单状态</th><th>时间</th><th>操作</th></tr></thead>
+                            <tbody id="orderTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="page-cards" style="display:none">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4><i class="bi bi-key me-2"></i>卡密管理</h4>
+                    <div class="d-flex gap-2">
+                        <select class="form-select" id="cardProductFilter" style="width:auto" onchange="loadCards()">
+                            <option value="">选择商品</option>
+                        </select>
+                        <button class="btn btn-success" onclick="importCards()"><i class="bi bi-upload me-1"></i>导入卡密</button>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead><tr><th>ID</th><th>商品</th><th>卡密内容</th><th>状态</th><th>导入时间</th><th>操作</th></tr></thead>
+                            <tbody id="cardTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="page-categories" style="display:none">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4><i class="bi bi-tags me-2"></i>分类管理</h4>
+                    <p class="text-secondary mb-0">如需管理分类，请在 Supabase 后台操作</p>
+                </div>
+                <div class="stat-card">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead><tr><th>ID</th><th>名称</th><th>标识</th><th>图标</th><th>排序</th><th>操作</th></tr></thead>
+                            <tbody id="categoryTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="page-payments" style="display:none">
+                <h4 class="mb-4"><i class="bi bi-credit-card me-2"></i>支付配置</h4>
+                <div class="stat-card">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead><tr><th>支付方式</th><th>状态</th><th>手续费</th><th>操作</th></tr></thead>
+                            <tbody id="paymentTableBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="page-security" style="display:none">
+                <h4 class="mb-4"><i class="bi bi-shield-lock me-2"></i>安全设置</h4>
+                <div class="stat-card mb-4">
+                    <h5 class="mb-3">修改密码</h5>
+                    <p class="text-secondary">请在 Supabase 后台手动修改管理员密码</p>
+                </div>
+                <div class="stat-card mb-4">
+                    <h5 class="mb-3">两步验证 (2FA)</h5>
+                    <p class="text-secondary">如需启用两步验证，请在 Supabase 后台配置 two_factor_config 表</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 数据库状态指示器（登录页隐藏，登录后显示） -->
+    <div class="db-status" id="dbStatus" style="display:none;">
+        <i class="bi bi-cloud"></i> 未连接
+    </div>
+
+    <div class="modal fade" id="productModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="productModalTitle">添加商品</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="productId">
+                    <div class="mb-3"><label class="form-label">商品名称</label><input type="text" class="form-control" id="productName"></div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3"><label class="form-label">价格</label><input type="number" class="form-control" id="productPrice" step="0.01"></div>
+                        <div class="col-md-6 mb-3"><label class="form-label">原价</label><input type="number" class="form-control" id="productOriginalPrice" step="0.01"></div>
+                    </div>
+                    <div class="mb-3"><label class="form-label">描述</label><textarea class="form-control" id="productDescription" rows="2"></textarea></div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">分类</label>
+                            <select class="form-select" id="productCategory"></select>
+                        </div>
+                        <div class="col-md-6 mb-3"><label class="form-label">库存</label><input type="number" class="form-control" id="productStock"></div>
+                    </div>
+                    <div class="mb-3"><label class="form-label">图片URL</label><input type="text" class="form-control" id="productImage" placeholder="https://..."></div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="productAutoDeliver" checked>
+                            <label class="form-check-label">自动发卡</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="productHot">
+                            <label class="form-check-label">热门商品</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="saveProduct()">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="importCardsModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">导入卡密</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="importProductId">
+                    <div class="mb-3">
+                        <label class="form-label">卡密内容</label>
+                        <textarea class="form-control" id="cardContents" rows="10" placeholder="每行一个卡密"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="button" class="btn btn-primary" onclick="confirmImportCards()">导入</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="../js/supabase.js?v=2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // HTML转义函数，防止XSS
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(text));
+            return div.innerHTML;
+        }
+        let adminInfo = null;
+        let adminToken = null;
+        let products = [];
+        let orders = [];
+        let categories = [];
+        let isDemoMode = false; // 演示模式标志
+
+        // 演示模式本地验证账号
+        const DEMO_ADMIN = {
+            username: 'demo',
+            password: 'Demo@123456',
+            token: 'demo-token-' + Date.now(),
+            admin: {
+                id: 1,
+                username: 'demo',
+                email: 'demo@fakashop.com',
+                role: 'admin'
+            }
+        };
+
+        // 演示模式Mock数据
+        const DEMO_PRODUCTS = [
+            { id: 1, name: 'Netflix VIP会员月卡', price: 29.99, stock: 999, sales: 156, status: 'active', categories: { name: 'VIP会员' }, hot: true },
+            { id: 2, name: 'Spotify Premium账号', price: 19.99, stock: 500, sales: 89, status: 'active', categories: { name: '账号类' }, hot: true },
+            { id: 3, name: 'ChatGPT Plus代充', price: 149.00, stock: 50, sales: 234, status: 'active', categories: { name: 'VIP会员' }, hot: true },
+            { id: 4, name: 'Adobe全家桶激活码', price: 59.99, stock: 200, sales: 67, status: 'active', categories: { name: '卡密类' } },
+            { id: 5, name: 'Steam游戏礼包', price: 99.00, stock: 100, sales: 45, status: 'active', categories: { name: '卡密类' } },
+            { id: 6, name: '1TB云存储空间', price: 39.99, stock: 300, sales: 123, status: 'active', categories: { name: '下载类' }, hot: true }
+        ];
+
+        const DEMO_ORDERS = [
+            { order_no: 'ORD20240101000001', product_name: 'Netflix VIP会员月卡', total_price: 29.99, contact: 'QQ:12345678', payment_status: 'paid', status: 'completed', created_at: '2024-01-01 10:00:00' },
+            { order_no: 'ORD20240101000002', product_name: 'ChatGPT Plus代充', total_price: 149.00, contact: 'QQ:87654321', payment_status: 'paid', status: 'completed', created_at: '2024-01-02 15:30:00' },
+            { order_no: 'ORD20240101000003', product_name: 'Spotify Premium账号', total_price: 39.98, contact: 'email: user@example.com', payment_status: 'paid', status: 'completed', created_at: '2024-01-03 09:15:00' },
+            { order_no: 'ORD20240101000004', product_name: 'Steam游戏礼包', total_price: 99.00, contact: 'QQ:11223344', payment_status: 'pending', status: 'pending', created_at: '2024-01-04 14:20:00' }
+        ];
+
+        const DEMO_CARDS = [
+            { id: 1, product_id: 1, product_name: 'Netflix VIP会员月卡', card_content: '账号: netflix001@demo.com | 密码: NF2024VIP#Pass', status: 'available', created_at: '2024-01-01' },
+            { id: 2, product_id: 1, product_name: 'Netflix VIP会员月卡', card_content: '账号: netflix002@demo.com | 密码: NF2024VIP#Pass', status: 'available', created_at: '2024-01-01' },
+            { id: 3, product_id: 2, product_name: 'Spotify Premium账号', card_content: '账号: spotify001@demo.com | 密码: SP2024Prem#Pass', status: 'available', created_at: '2024-01-02' },
+            { id: 4, product_id: 3, product_name: 'ChatGPT Plus代充', card_content: 'ChatGPT Plus 兑换码: CGPT-PLUS-2024-XXXX-YYYY', status: 'available', created_at: '2024-01-03' }
+        ];
+
+        const DEMO_CATEGORIES = [
+            { id: 1, name: 'VIP会员', slug: 'vip', icon: '🎬', sort_order: 1 },
+            { id: 2, name: '账号类', slug: 'account', icon: '👤', sort_order: 2 },
+            { id: 3, name: '卡密类', slug: 'card', icon: '🔑', sort_order: 3 },
+            { id: 4, name: '下载类', slug: 'download', icon: '📥', sort_order: 4 },
+            { id: 5, name: '其他商品', slug: 'other', icon: '📦', sort_order: 5 }
+        ];
+
+        const DEMO_PAYMENTS = [
+            { id: 1, payment_type: 'nexapay', payment_name: 'NexaPay (USDT TRC20)', enabled: true, fee_percent: 0 },
+            { id: 2, payment_type: 'stripe', payment_name: 'Stripe (信用卡)', enabled: false, fee_percent: 2.9 },
+            { id: 3, payment_type: 'paypal', payment_name: 'PayPal', enabled: false, fee_percent: 3.4 },
+            { id: 4, payment_type: 'alipay', payment_name: '支付宝', enabled: false, fee_percent: 0 },
+            { id: 5, payment_type: 'wechat', payment_name: '微信支付', enabled: false, fee_percent: 0 }
+        ];
+
+        async function init() {
+            // 检查URL参数是否启用演示模式
+            const urlParams = new URLSearchParams(window.location.search);
+            isDemoMode = urlParams.get('demo') === 'true' || localStorage.getItem('admin_demo_mode') === 'true';
+
+            if (isDemoMode) {
+                // 演示模式：添加演示徽章和提示
+                console.log('🎭 管理后台 - 演示模式已启用');
+                document.getElementById('demoHint').style.display = 'block';
+                addDemoBadge();
+                updateDbStatus();
+                checkSession();
+                return;
+            }
+
+            // 正式模式：自动尝试连接数据库
+            const dbConnecting = document.getElementById('dbConnecting');
+            dbConnecting.style.display = 'block';
+
+            if (!window.supabaseClient.isConnected()) {
+                const autoConfig = window.supabaseClient.loadConfigFromEnv();
+                if (autoConfig) {
+                    window.supabaseClient.saveConfig(autoConfig);
+                } else {
+                    const savedConfig = window.supabaseClient.loadConfig();
+                    if (savedConfig) {
+                        window.supabaseClient.saveConfig(savedConfig);
+                    }
+                }
+            }
+
+            dbConnecting.style.display = 'none';
+            updateDbStatus();
+            checkSession();
+        }
+
+        function updateDbStatus() {
+            const status = document.getElementById('dbStatus');
+
+            // 登录页不显示状态指示器
+            if (document.getElementById('loginPage').style.display !== 'none') {
+                status.style.display = 'none';
+                return;
+            }
+
+            // 登录后显示状态指示器
+            status.style.display = 'block';
+
+            if (isDemoMode) {
+                status.className = 'db-status connected';
+                status.innerHTML = '<i class="bi bi-eye"></i> 演示模式';
+            } else if (window.supabaseClient.isConnected()) {
+                status.className = 'db-status connected';
+                status.innerHTML = '<i class="bi bi-cloud-check"></i> 已连接';
+            } else {
+                status.className = 'db-status disconnected';
+                status.innerHTML = '<i class="bi bi-cloud-off"></i> 数据库未连接';
+            }
+        }
+
+        function showConnectModal() {
+            window.supabaseClient.showConnectModal().then(connected => {
+                updateDbStatus();
+                if (connected) checkSession();
+            });
+        }
+
+        function checkSession() {
+            const session = localStorage.getItem('admin_session');
+            if (session) {
+                try {
+                    const parsed = JSON.parse(session);
+                    if (parsed?.admin && parsed?.token) {
+                        adminInfo = parsed.admin;
+                        adminToken = parsed.token;
+                        isDemoMode = parsed.isDemo || false;
+                        if (isDemoMode) {
+                            document.getElementById('demoHint').style.display = 'block';
+                            addDemoBadge();
+                        }
+                        showDashboard();
+                    } else {
+                        localStorage.removeItem('admin_session');
+                    }
+                } catch {
+                    localStorage.removeItem('admin_session');
+                }
+            }
+        }
+
+        function getAuthHeaders() {
+            if (!adminToken) return {};
+            return { Authorization: `Bearer ${adminToken}` };
+        }
+
+        function showDashboard() {
+            document.getElementById('loginPage').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+            updateDbStatus(); // 显示数据库状态指示器
+            loadData();
+        }
+
+        async function loadData() {
+            if (isDemoMode) {
+                // 演示模式：使用Mock数据
+                products = DEMO_PRODUCTS;
+                orders = DEMO_ORDERS;
+                categories = DEMO_CATEGORIES;
+                
+                renderProducts();
+                renderOrders();
+                renderCategories();
+                renderPaymentConfig(DEMO_PAYMENTS);
+                updateDemoStats();
+            } else {
+                // 正式模式：从数据库加载
+                await Promise.all([loadProducts(), loadOrders(), loadCategories(), loadPaymentConfig()]);
+                updateStats();
+            }
+        }
+
+        function updateDemoStats() {
+            document.getElementById('totalProducts').textContent = products.length;
+            const pendingOrders = orders.filter(o => o.status === 'pending').length;
+            document.getElementById('pendingOrders').textContent = pendingOrders;
+            document.getElementById('totalOrders').textContent = orders.length;
+            const totalRevenue = orders.filter(o => o.status === 'completed').reduce((sum, o) => sum + parseFloat(o.total_price), 0);
+            document.getElementById('totalRevenue').textContent = totalRevenue.toFixed(2);
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const code = '';
+            const loginBtn = document.getElementById('loginBtn');
+            const loginError = document.getElementById('loginError');
+
+            // 演示模式：本地验证，无需数据库
+            if (isDemoMode) {
+                loginBtn.disabled = true;
+                loginBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>登录中...';
+                loginError.style.display = 'none';
+
+                // 模拟网络延迟
+                await new Promise(resolve => setTimeout(resolve, 800));
+
+                if (username === DEMO_ADMIN.username && password === DEMO_ADMIN.password) {
+                    adminInfo = DEMO_ADMIN.admin;
+                    adminToken = DEMO_ADMIN.token;
+                    localStorage.setItem('admin_session', JSON.stringify({
+                        admin: DEMO_ADMIN.admin,
+                        token: DEMO_ADMIN.token,
+                        isDemo: true
+                    }));
+                    showDashboard();
+                } else {
+                    loginError.style.display = 'block';
+                    loginError.innerHTML = '<i class="bi bi-x-circle"></i> 演示账号：用户名 demo，密码 Demo@123456';
+                }
+
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = '<i class="bi bi-box-arrow-in-right me-2"></i>登录';
+                return;
+            }
+
+            // 正式模式：自动连接并登录
+            loginBtn.disabled = true;
+            loginBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>登录中...';
+            loginError.style.display = 'none';
+
+            // 确保数据库已连接
+            if (!window.supabaseClient.isConnected()) {
+                const autoConfig = window.supabaseClient.loadConfigFromEnv();
+                if (autoConfig) {
+                    window.supabaseClient.saveConfig(autoConfig);
+                } else {
+                    const savedConfig = window.supabaseClient.loadConfig();
+                    if (savedConfig) {
+                        window.supabaseClient.saveConfig(savedConfig);
+                    }
+                }
+            }
+
+            if (!window.supabaseClient.isConnected()) {
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = '<i class="bi bi-box-arrow-in-right me-2"></i>登录';
+                loginError.style.display = 'block';
+                loginError.innerHTML = '<i class="bi bi-exclamation-triangle"></i> 数据库未连接，请检查配置';
+                return;
+            }
+
+            try {
+                const supabase = window.supabaseClient.getClient();
+                const { data, error } = await supabase.functions.invoke('admin-login', {
+                    body: { username, password, code }
+                });
+
+                if (error) {
+                    throw new Error('网络请求失败: ' + error.message);
+                }
+
+                if (!data?.success) {
+                    loginError.style.display = 'block';
+                    loginError.innerHTML = '<i class="bi bi-x-circle"></i> ' + (data?.message || '登录失败，请检查账号密码');
+                    return;
+                }
+
+                if (data.require2fa) {
+                    loginError.style.display = 'block';
+                    loginError.innerHTML = '<i class="bi bi-shield-lock"></i> 请输入验证码';
+                    return;
+                }
+
+                if (!data.token) {
+                    loginError.style.display = 'block';
+                    loginError.innerHTML = '<i class="bi bi-x-circle"></i> 登录失败：未获取到会话令牌';
+                    return;
+                }
+
+                adminInfo = data.admin;
+                adminToken = data.token;
+                localStorage.setItem('admin_session', JSON.stringify({ admin: data.admin, token: data.token, isDemo: false }));
+                
+                // 检查是否是 demo 账号
+                if (data.admin && data.admin.isDemo) {
+                    showDemoBanner();
+                }
+                
+                showDashboard();
+            } catch (err) {
+                console.error('登录错误:', err);
+                loginError.style.display = 'block';
+                loginError.innerHTML = '<i class="bi bi-x-circle"></i> 登录失败: ' + err.message;
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.innerHTML = '<i class="bi bi-box-arrow-in-right me-2"></i>登录';
+            }
+        });
+
+
+
+        function logout() {
+            localStorage.removeItem('admin_session');
+            adminInfo = null;
+            adminToken = null;
+            location.reload();
+        }
+
+        function addDemoBadge() {
+            // 在侧边栏顶部添加演示徽章
+            const sidebarBrand = document.querySelector('.sidebar-brand');
+            if (!sidebarBrand) return;
+
+            const badge = document.createElement('span');
+            badge.id = 'demoBadge';
+            badge.style.cssText = 'margin-left:auto;padding:4px 10px;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;border-radius:12px;font-size:0.8rem;font-weight:700;cursor:pointer;letter-spacing:0.5px;text-shadow:0 1px 2px rgba(0,0,0,0.3);white-space:nowrap;';
+            badge.innerHTML = '<i class="bi bi-eye"></i> 演示';
+            badge.onclick = () => {
+                if (confirm('当前为演示模式，使用本地Mock数据。\n\n是否切换到正式模式？')) {
+                    localStorage.removeItem('admin_demo_mode');
+                    location.reload();
+                }
+            };
+
+            // 确保只添加一次
+            if (!document.getElementById('demoBadge')) {
+                sidebarBrand.style.display = 'flex';
+                sidebarBrand.style.alignItems = 'center';
+                sidebarBrand.appendChild(badge);
+            }
+        }
+
+        // 显示演示模式横幅（正式模式下的 demo 账号）
+        function showDemoBanner() {
+            const banner = document.createElement('div');
+            banner.id = 'demoBanner';
+            banner.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 240px;
+                right: 0;
+                padding: 12px 20px;
+                background: linear-gradient(135deg, #f59e0b, #ef4444);
+                color: white;
+                text-align: center;
+                font-weight: 600;
+                z-index: 9998;
+                box-shadow: 0 4px 12px rgba(245,158,11,0.4);
+            `;
+            banner.innerHTML = `
+                <i class="bi bi-shield-lock"></i> 
+                🎭 演示模式：您可以查看和添加数据，但无法修改/删除系统预置的演示商品（至少保留 4 个）。
+                <a href="https://github.com/yourusername/faka3" target="_blank" style="color:white;text-decoration:underline;margin-left:10px;">
+                    <i class="bi bi-github"></i> 部署自己的实例
+                </a>
+            `;
+            document.body.appendChild(banner);
+
+            // 调整主内容区域，避免被横幅遮挡
+            const mainContent = document.querySelector('.main-content');
+            if (mainContent) {
+                mainContent.style.paddingTop = '60px';
+            }
+        }
+
+        function showPage(pageName) {
+            document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+            event.target.closest('.nav-item').classList.add('active');
+            document.querySelectorAll('[id^="page-"]').forEach(p => p.style.display = 'none');
+            document.getElementById('page-' + pageName).style.display = 'block';
+            
+            if (pageName === 'orders') loadOrders();
+            if (pageName === 'cards') loadCards();
+            if (pageName === 'categories') loadCategories();
+            if (pageName === 'payments') loadPaymentConfig();
+        }
+
+        async function loadProducts() {
+            if (isDemoMode) {
+                products = DEMO_PRODUCTS;
+                renderProducts();
+                return;
+            }
+            const supabase = window.supabaseClient.getClient();
+            const { data } = await supabase.functions.invoke('admin-products', {
+                body: { action: 'list' },
+                headers: getAuthHeaders()
+            });
+            products = data?.products || [];
+            renderProducts();
+        }
+
+        async function loadOrders() {
+            if (isDemoMode) {
+                orders = DEMO_ORDERS;
+                renderOrders();
+                return;
+            }
+            const status = document.getElementById('orderStatusFilter')?.value || 'all';
+            const supabase = window.supabaseClient.getClient();
+            const { data } = await supabase.functions.invoke('admin-orders', {
+                body: { action: 'list', data: { status } },
+                headers: getAuthHeaders()
+            });
+            orders = data?.orders || [];
+            renderOrders();
+        }
+
+        async function loadCategories() {
+            if (isDemoMode) {
+                categories = DEMO_CATEGORIES;
+                renderCategories();
+                renderCategorySelect();
+                return;
+            }
+            const supabase = window.supabaseClient.getClient();
+            const { data } = await supabase.from('categories').select('*').order('sort_order');
+            categories = data || [];
+            renderCategories();
+            renderCategorySelect();
+        }
+
+        async function loadPaymentConfig() {
+            if (isDemoMode) {
+                renderPaymentConfig(DEMO_PAYMENTS);
+                return;
+            }
+            const supabase = window.supabaseClient.getClient();
+            const { data } = await supabase.from('payment_config').select('*');
+            renderPaymentConfig(data || []);
+        }
+
+        async function updateStats() {
+            const supabase = window.supabaseClient.getClient();
+            const { data } = await supabase.functions.invoke('admin-orders', {
+                body: { action: 'stats' },
+                headers: getAuthHeaders()
+            });
+            
+            if (data?.stats) {
+                document.getElementById('totalProducts').textContent = products.length;
+                document.getElementById('pendingOrders').textContent = data.stats.pendingOrders;
+                document.getElementById('totalOrders').textContent = data.stats.totalOrders;
+                document.getElementById('totalRevenue').textContent = data.stats.totalRevenue.toFixed(2);
+            }
+        }
+
+        function renderProducts() {
+            const tbody = document.getElementById('productTableBody');
+            tbody.innerHTML = products.length ? '' : '<tr><td colspan="8" class="text-center text-secondary py-4">暂无商品</td></tr>';
+
+            products.forEach(p => {
+                const tr = document.createElement('tr');
+                const catName = escapeHtml(p.categories?.name || '未分类');
+                const stockStatus = p.stock > 0 ? p.stock : '<span class="text-danger">缺货</span>';
+                const statusBadge = p.status === 'active' ? '<span class="badge bg-success">上架</span>' : '<span class="badge bg-secondary">下架</span>';
+
+                tr.innerHTML = `
+                    <td>${p.id}</td>
+                    <td>${escapeHtml(p.name)}</td>
+                    <td>${catName}</td>
+                    <td class="text-success">¥${p.price}</td>
+                    <td>${stockStatus}</td>
+                    <td>${p.sales || 0}</td>
+                    <td>${statusBadge}</td>
+                    <td>
+                        <button class="btn btn-sm btn-primary me-1" onclick="editProduct(${p.id})"><i class="bi bi-pencil"></i></button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteProduct(${p.id})"><i class="bi bi-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderOrders() {
+            const tbody = document.getElementById('orderTableBody');
+            tbody.innerHTML = orders.length ? '' : '<tr><td colspan="8" class="text-center text-secondary py-4">暂无订单</td></tr>';
+
+            orders.forEach(o => {
+                const tr = document.createElement('tr');
+                const payStatus = { pending: 'badge-pending', paid: 'badge-paid', failed: 'badge-failed' }[o.payment_status] || '';
+                const orderStatus = { pending: '待处理', paid: '已支付', completed: '已完成', cancelled: '已取消' }[o.status] || o.status;
+
+                tr.innerHTML = `
+                    <td><code>${escapeHtml(o.order_no)}</code></td>
+                    <td>${escapeHtml(o.product_name)}</td>
+                    <td class="text-success">¥${o.total_price}</td>
+                    <td>${escapeHtml(o.contact || '-')}</td>
+                    <td><span class="badge-status ${payStatus}">${escapeHtml(o.payment_status)}</span></td>
+                    <td><span class="badge-status ${o.status === 'completed' ? 'badge-completed' : 'badge-pending'}">${escapeHtml(orderStatus)}</span></td>
+                    <td>${new Date(o.created_at).toLocaleString()}</td>
+                    <td>
+                        ${o.status === 'pending' ? `<button class="btn btn-sm btn-success me-1" onclick="completeOrder(${o.id})"><i class="bi bi-check"></i></button>` : ''}
+                        <button class="btn btn-sm btn-danger" onclick="deleteOrder(${o.id})"><i class="bi bi-trash"></i></button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderCategories() {
+            const tbody = document.getElementById('categoryTableBody');
+            tbody.innerHTML = categories.length ? '' : '<tr><td colspan="6" class="text-center text-secondary py-4">暂无分类</td></tr>';
+
+            categories.forEach(c => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${c.id}</td>
+                    <td>${escapeHtml(c.name)}</td>
+                    <td><code>${escapeHtml(c.slug)}</code></td>
+                    <td>${escapeHtml(c.icon || '📦')}</td>
+                    <td>${c.sort_order}</td>
+                    <td><button class="btn btn-sm btn-danger" onclick="deleteCategory(${c.id})"><i class="bi bi-trash"></i></button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderPaymentConfig(configs) {
+            const tbody = document.getElementById('paymentTableBody');
+            tbody.innerHTML = '';
+
+            configs.forEach(c => {
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${escapeHtml(c.payment_name)}</td>
+                    <td>${c.enabled ? '<span class="text-success">已启用</span>' : '<span class="text-secondary">未启用</span>'}</td>
+                    <td>${c.fee_percent || 0}%</td>
+                    <td><button class="btn btn-sm btn-primary" onclick="alert('请在Supabase后台配置')">配置</button></td>
+                </tr>`;
+            });
+        }
+
+        function renderCategorySelect() {
+            const select = document.getElementById('productCategory');
+            let html = '<option value="">选择分类</option>';
+            categories.forEach(c => {
+                html += `<option value="${c.id}">${c.name}</option>`;
+            });
+            select.innerHTML = html;
+        }
+
+        function addProduct() {
+            document.getElementById('productModalTitle').textContent = '添加商品';
+            document.getElementById('productId').value = '';
+            ['productName', 'productPrice', 'productOriginalPrice', 'productDescription', 'productStock', 'productImage'].forEach(id => {
+                document.getElementById(id).value = '';
+            });
+            document.getElementById('productStock').value = 999;
+            document.getElementById('productAutoDeliver').checked = true;
+            new bootstrap.Modal(document.getElementById('productModal')).show();
+        }
+
+        async function saveProduct() {
+            const id = document.getElementById('productId').value;
+            const data = {
+                name: document.getElementById('productName').value,
+                price: parseFloat(document.getElementById('productPrice').value) || 0,
+                original_price: parseFloat(document.getElementById('productOriginalPrice').value) || 0,
+                description: document.getElementById('productDescription').value,
+                category_id: parseInt(document.getElementById('productCategory').value) || null,
+                stock: parseInt(document.getElementById('productStock').value) || 999,
+                image: document.getElementById('productImage').value,
+                auto_deliver: document.getElementById('productAutoDeliver').checked,
+                hot: document.getElementById('productHot').checked,
+                status: 'active'
+            };
+
+            const supabase = window.supabaseClient.getClient();
+            
+            if (id) {
+                data.id = parseInt(id);
+                await supabase.functions.invoke('admin-products', {
+                    body: { action: 'update', data },
+                    headers: getAuthHeaders()
+                });
+            } else {
+                await supabase.functions.invoke('admin-products', {
+                    body: { action: 'add', data },
+                    headers: getAuthHeaders()
+                });
+            }
+
+            bootstrap.Modal.getInstance(document.getElementById('productModal')).hide();
+            await loadProducts();
+        }
+
+        async function editProduct(id) {
+            const p = products.find(x => x.id === id);
+            if (!p) return;
+            
+            document.getElementById('productModalTitle').textContent = '编辑商品';
+            document.getElementById('productId').value = p.id;
+            document.getElementById('productName').value = p.name;
+            document.getElementById('productPrice').value = p.price;
+            document.getElementById('productOriginalPrice').value = p.original_price;
+            document.getElementById('productDescription').value = p.description || '';
+            document.getElementById('productCategory').value = p.category_id || '';
+            document.getElementById('productStock').value = p.stock;
+            document.getElementById('productImage').value = p.image || '';
+            document.getElementById('productAutoDeliver').checked = p.auto_deliver;
+            document.getElementById('productHot').checked = p.hot;
+            
+            new bootstrap.Modal(document.getElementById('productModal')).show();
+        }
+
+        async function deleteProduct(id) {
+            if (!confirm('确定删除?')) return;
+            const supabase = window.supabaseClient.getClient();
+            await supabase.functions.invoke('admin-products', {
+                body: { action: 'delete', data: { id } },
+                headers: getAuthHeaders()
+            });
+            await loadProducts();
+        }
+
+        async function completeOrder(id) {
+            const supabase = window.supabaseClient.getClient();
+            await supabase.functions.invoke('admin-orders', { 
+                body: { action: 'update_status', data: { id, status: 'completed' } },
+                headers: getAuthHeaders()
+            });
+            await loadOrders();
+        }
+
+        async function deleteOrder(id) {
+            if (!confirm('确定删除?')) return;
+            const supabase = window.supabaseClient.getClient();
+            await supabase.functions.invoke('admin-orders', {
+                body: { action: 'delete', data: { id } },
+                headers: getAuthHeaders()
+            });
+            await loadOrders();
+        }
+
+        async function loadCards() {
+            const productId = document.getElementById('cardProductFilter')?.value;
+            const supabase = window.supabaseClient.getClient();
+
+            const payload = {
+                action: 'list',
+                data: { product_id: productId ? parseInt(productId) : null }
+            };
+
+            const { data } = await supabase.functions.invoke('admin-cards', {
+                body: payload,
+                headers: getAuthHeaders()
+            });
+
+            renderCards(data?.cards || []);
+        }
+
+        function renderCards(cards) {
+            const tbody = document.getElementById('cardTableBody');
+            tbody.innerHTML = cards.length ? '' : '<tr><td colspan="6" class="text-center text-secondary py-4">暂无卡密</td></tr>';
+            
+            cards.forEach(c => {
+                const statusBadge = c.status === 'available' ? '<span class="badge bg-success">可用</span>' : '<span class="badge bg-secondary">已用</span>';
+                tbody.innerHTML += `<tr>
+                    <td>${c.id}</td>
+                    <td>${c.products?.name || '-'}</td>
+                    <td><code>${c.card_content.substring(0, 30)}...</code></td>
+                    <td>${statusBadge}</td>
+                    <td>${new Date(c.created_at).toLocaleString()}</td>
+                    <td><button class="btn btn-sm btn-danger" onclick="deleteCard(${c.id})"><i class="bi bi-trash"></i></button></td>
+                </tr>`;
+            });
+        }
+
+        function importCards() {
+            const productId = document.getElementById('cardProductFilter')?.value;
+            if (!productId) { alert('请先在上方选择商品'); return; }
+            document.getElementById('importProductId').value = productId;
+            new bootstrap.Modal(document.getElementById('importCardsModal')).show();
+        }
+
+        async function confirmImportCards() {
+            const productId = document.getElementById('importProductId').value;
+            const content = document.getElementById('cardContents').value;
+            const cards = content.split('\n').filter(c => c.trim());
+            
+            if (!cards.length) { alert('请输入卡密内容'); return; }
+
+            const supabase = window.supabaseClient.getClient();
+            await supabase.functions.invoke('admin-cards', { 
+                body: { action: 'add', data: { product_id: parseInt(productId), cards } },
+                headers: getAuthHeaders()
+            });
+
+            bootstrap.Modal.getInstance(document.getElementById('importCardsModal')).hide();
+            document.getElementById('cardContents').value = '';
+            await loadCards();
+            await loadProducts();
+        }
+
+        async function deleteCard(id) {
+            if (!confirm('确定删除?')) return;
+            const supabase = window.supabaseClient.getClient();
+            await supabase.functions.invoke('admin-cards', {
+                body: { action: 'delete', data: { id } },
+                headers: getAuthHeaders()
+            });
+            await loadCards();
+        }
+
+
+
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
