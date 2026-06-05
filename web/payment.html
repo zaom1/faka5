@@ -41,8 +41,17 @@
 
     <script src="js/supabase.js"></script>
     <script>
+        // escape HTML entities
+        function escapeHtml(text) {
+            if (text === null || text === undefined) return '';
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(text));
+            return div.innerHTML;
+        }
+
         const urlParams = new URLSearchParams(window.location.search);
         const orderNo = urlParams.get('order');
+        const accessToken = urlParams.get('token') || localStorage.getItem('order_access_token_' + orderNo) || '';
         const isDemoMode = urlParams.get('demo') === 'true';
 
         async function init() {
@@ -116,30 +125,30 @@
                 <div class="text-center">
                     <div class="status-icon ${statusClass}">${statusHtml}</div>
                     <h4>${statusText}</h4>
-                    <p class="text-secondary">订单号: ${order.order_no}</p>
+                    <p class="text-secondary">订单号: ${escapeHtml(order.order_no)}</p>
                     <span class="badge bg-warning">🎭 演示模式</span>
                 </div>
 
                 <div class="mt-4">
                     <div class="info-row">
                         <span class="info-label">商品名称</span>
-                        <span class="info-value">${order.product_name}</span>
+                        <span class="info-value">${escapeHtml(order.product_name)}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">购买数量</span>
-                        <span class="info-value">${order.quantity}</span>
+                        <span class="info-value">${escapeHtml(String(order.quantity))}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">支付方式</span>
-                        <span class="info-value">${order.payment_method}</span>
+                        <span class="info-value">${escapeHtml(order.payment_method)}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">订单金额</span>
-                        <span class="info-value text-success">¥${order.total_price}</span>
+                        <span class="info-value text-success">¥${escapeHtml(String(order.total_price))}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">联系方式</span>
-                        <span class="info-value">${order.contact}</span>
+                        <span class="info-value">${escapeHtml(order.contact)}</span>
                     </div>
                 </div>
             `;
@@ -148,7 +157,7 @@
                 content += `
                     <div class="mt-4">
                         <h6 class="text-success"><i class="bi bi-check-circle"></i> 您的卡密</h6>
-                        <div class="card-content">${order.card_content}</div>
+                        <div class="card-content" id="payCardContent"></div>
                         <p class="text-secondary mt-2" style="font-size: 0.85rem;">请妥善保管，复制或截图保存</p>
                     </div>
                 `;
@@ -160,7 +169,7 @@
                     <div class="crypto-box">
                         <h6><i class="bi bi-currency-bitcoin text-warning"></i> 请向以下地址转账</h6>
                         <p class="text-secondary" style="font-size: 0.85rem;">请转账 exact 金额的 USDT (TRC20)</p>
-                        <div class="crypto-address" id="cryptoAddress" onclick="copyToClipboard(this)">${cryptoAddr}</div>
+                        <div class="crypto-address" id="cryptoAddress" onclick="copyToClipboard(this)">${escapeHtml(cryptoAddr)}</div>
                         <div class="text-center">
                             <button class="btn btn-sm btn-outline-warning" onclick="copyToClipboard(this.previousElementSibling)">
                                 <i class="bi bi-clipboard"></i> 复制地址
@@ -185,6 +194,11 @@
             }
 
             card.innerHTML = content;
+            // use textContent for card content to avoid XSS
+            const demoCardEl = document.getElementById('payCardContent');
+            if (demoCardEl && order.card_content) {
+                demoCardEl.textContent = order.card_content;
+            }
         }
 
         function simulatePaymentSuccess() {
@@ -215,7 +229,7 @@
             const supabase = window.supabaseClient.getClient();
             
             const { data, error } = await supabase.functions.invoke('get-order', {
-                body: { order_no: orderNo }
+                body: { order_no: orderNo, access_token: accessToken }
             });
 
             if (error || !data?.success) {
@@ -234,7 +248,7 @@
         async function checkOrderStatus() {
             const supabase = window.supabaseClient.getClient();
             const { data } = await supabase.functions.invoke('get-order', {
-                body: { order_no: orderNo }
+                body: { order_no: orderNo, access_token: accessToken }
             });
 
             if (data?.success && data.order.payment_status === 'paid') {
@@ -266,29 +280,29 @@
                 <div class="text-center">
                     <div class="status-icon ${statusClass}">${statusHtml}</div>
                     <h4>${statusText}</h4>
-                    <p class="text-secondary">订单号: ${order.order_no}</p>
+                    <p class="text-secondary">订单号: ${escapeHtml(order.order_no)}</p>
                 </div>
                 
                 <div class="mt-4">
                     <div class="info-row">
                         <span class="info-label">商品名称</span>
-                        <span class="info-value">${order.product_name}</span>
+                        <span class="info-value">${escapeHtml(order.product_name)}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">购买数量</span>
-                        <span class="info-value">${order.quantity}</span>
+                        <span class="info-value">${escapeHtml(String(order.quantity))}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">支付方式</span>
-                        <span class="info-value">${order.payment_method}</span>
+                        <span class="info-value">${escapeHtml(order.payment_method)}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">订单金额</span>
-                        <span class="info-value text-success">¥${order.total_price}</span>
+                        <span class="info-value text-success">¥${escapeHtml(String(order.total_price))}</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">联系方式</span>
-                        <span class="info-value">${order.contact}</span>
+                        <span class="info-value">${escapeHtml(order.contact)}</span>
                     </div>
                 </div>
             `;
@@ -297,7 +311,7 @@
                 content += `
                     <div class="mt-4">
                         <h6 class="text-success"><i class="bi bi-check-circle"></i> 您的卡密</h6>
-                        <div class="card-content">${order.card_content}</div>
+                        <div class="card-content" id="payCardContent"></div>
                         <p class="text-secondary mt-2" style="font-size: 0.85rem;">请妥善保管，复制或截图保存</p>
                     </div>
                 `;
@@ -309,7 +323,7 @@
                     <div class="crypto-box">
                         <h6><i class="bi bi-currency-bitcoin text-warning"></i> 请向以下地址转账</h6>
                         <p class="text-secondary" style="font-size: 0.85rem;">请转账 exact 金额的 USDT (TRC20)</p>
-                        <div class="crypto-address" id="cryptoAddress" onclick="copyToClipboard(this)">${cryptoAddr}</div>
+                        <div class="crypto-address" id="cryptoAddress" onclick="copyToClipboard(this)">${escapeHtml(cryptoAddr)}</div>
                         <div class="text-center">
                             <button class="btn btn-sm btn-outline-warning" onclick="copyToClipboard(this.previousElementSibling)">
                                 <i class="bi bi-clipboard"></i> 复制地址
@@ -331,13 +345,18 @@
             }
 
             card.innerHTML = content;
+            // use textContent for card content to avoid XSS
+            const orderCardEl = document.getElementById('payCardContent');
+            if (orderCardEl && order.card_content) {
+                orderCardEl.textContent = order.card_content;
+            }
         }
 
         function showError(msg) {
             document.getElementById('paymentCard').innerHTML = `
                 <div class="text-center">
                     <div class="status-icon status-failed"><i class="bi bi-x-circle"></i></div>
-                    <h4>${msg}</h4>
+                    <h4>${escapeHtml(msg)}</h4>
                     <a href="index.html" class="btn btn-primary mt-3">返回首页</a>
                 </div>
             `;

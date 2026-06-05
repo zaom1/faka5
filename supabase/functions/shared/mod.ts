@@ -51,6 +51,107 @@ export function createSupabaseClient(useServiceRole = true) {
 // ========================================
 // JWT 验证
 // ========================================
+// ========================================
+// JWT 验证 - 本地实现（供 admin 函数复用）
+// ========================================
+function fromBase64Url(input: string): string {
+  const base64 = input.replace(/-/g, '+').replace(/_/g, '/');
+  const pad = base64.length % 4;
+  const normalized = pad ? base64 + '='.repeat(4 - pad) : base64;
+  return atob(normalized);
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let result = 0;
+  for (let i = 0; i < a.length; i++) {
+    result |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return result === 0;
+}
+
+async function signPayloadLocal(payload: string, secret: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign'],
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(payload));
+  const bytes = new Uint8Array(signature);
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+export async function requireAdminAuth(req: Request): Promise<{ adminId: number; role?: string } | Response> {
+  const secret = Deno.env.get('ADMIN_JWT_SECRET');
+  if (!secret) {
+    return new Response(JSON.stringify({ success: false, message: '服务器配置错误：ADMIN_JWT_SECRET 未设置' }), {
+      status: 500,
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+    });
+  }
+
+  // 统一鉴权：检查 Bearer token 签名和过期时间
+  const auth = req.headers.get('Authorization') || req.headers.get('authorization');
+  if (!auth || !auth.startsWith('Bearer ')) {
+    return new Response(JSON.stringify({ success: false, message: '未授权' }), {
+      status: 401,
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+    });
+  }
+
+  const token = auth.slice(7).trim();
+  const [payloadPart, signaturePart] = token.split('.');
+  if (!payloadPart || !signaturePart) {
+    return new Response(JSON.stringify({ success: false, message: '未授权' }), {
+      status: 401,
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+    });
+  }
+
+  const expected = await signPayloadLocal(payloadPart, secret);
+  if (!timingSafeEqual(expected, signaturePart)) {
+    return new Response(JSON.stringify({ success: false, message: '未授权' }), {
+      status: 401,
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+    });
+  }
+
+  try {
+    const payload = JSON.parse(fromBase64Url(payloadPart));
+    if (!payload?.adminId || typeof payload.adminId !== 'number') {
+      return new Response(JSON.stringify({ success: false, message: '未授权' }), {
+        status: 401,
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+      });
+    }
+    if (!payload?.exp || typeof payload.exp !== 'number') {
+      return new Response(JSON.stringify({ success: false, message: '未授权' }), {
+        status: 401,
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+      });
+    }
+    if (payload.exp <= Math.floor(Date.now() / 1000)) {
+      return new Response(JSON.stringify({ success: false, message: '令牌已过期' }), {
+        status: 401,
+        headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+      });
+    }
+    return { adminId: payload.adminId, role: payload.role };
+  } catch {
+    return new Response(JSON.stringify({ success: false, message: '未授权' }), {
+      status: 401,
+      headers: { ...getCorsHeaders(req), 'Content-Type': 'application/json' },
+    });
+  }
+}
+
 function toBase64UrlFromBytes(bytes: Uint8Array): string {
   let binary = '';
   for (const byte of bytes) {
@@ -76,7 +177,8 @@ async function verifySignature(payload: string, signature: string, secret: strin
 }
 
 export async function verifyAdminToken(token: string): Promise<{ valid: boolean; payload?: any }> {
-  const secret = Deno.env.get('ADMIN_JWT_SECRET') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  // ADMIN_JWT_SECRET 必须配置，不回退到 service role key
+  const secret = Deno.env.get('ADMIN_JWT_SECRET');
   if (!secret) return { valid: false };
 
   const parts = token.split('.');

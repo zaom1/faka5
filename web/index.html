@@ -624,7 +624,7 @@
                 alert(`订单创建成功！\n订单号: ${data.order.order_no}\n\n请向以下地址转账USDT:\n${data.payment.cryptoAddress}\n\n转账金额: ${data.payment.cryptoAmount} USDT`);
             }
 
-            window.location.href = `payment.html?order=${data.order.order_no}`;
+            window.location.href = `payment.html?order=${data.order.order_no}&token=${data.accessToken || ''}`;
         }
 
         function filterCategory(el, category) {

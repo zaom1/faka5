@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS orders (
     card_content TEXT,
     trade_no TEXT,
     crypto_address TEXT,
+    access_token TEXT,  -- 用于客户端查询订单的访问令牌
     remark TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     paid_at TIMESTAMPTZ,
@@ -83,10 +84,12 @@ CREATE TABLE IF NOT EXISTS payment_config (
 CREATE TABLE IF NOT EXISTS admins (
     id SERIAL PRIMARY KEY,
     username TEXT UNIQUE NOT NULL,
-    password_hash TEXT NOT NULL,
-    salt TEXT NOT NULL,
+    password_hash TEXT,  -- 允许 NULL，新账号需通过安全渠道设置密码
+    salt TEXT,
     email TEXT,
     role TEXT DEFAULT 'admin',
+    login_attempts INTEGER DEFAULT 0,
+    locked_until TIMESTAMPTZ,
     last_login TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -236,6 +239,14 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'categories_public_read') THEN
         CREATE POLICY "categories_public_read" ON categories FOR SELECT USING (true);
     END IF;
+
+    -- orders 表：允许插入，允许通过 access_token 查询自己的订单
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = 'orders_insert_all') THEN
+        CREATE POLICY "orders_insert_all" ON orders FOR INSERT WITH CHECK (true);
+    END IF;
+
+    -- cards 表：仅允许 service_role 访问，不允许 anon key 直接读取
+    -- 卡密分配通过 Edge Functions 使用 service_role key 执行，无需额外策略
 END $$;
 
 -- 初始数据

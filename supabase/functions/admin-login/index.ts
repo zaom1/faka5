@@ -64,8 +64,14 @@ Deno.serve(async (req) => {
 
   try {
     // 获取签名密钥和数据库客户端
-    // 优先使用 ADMIN_JWT_SECRET，回退到 SUPABASE_SERVICE_ROLE_KEY
-    const tokenSecret = Deno.env.get('ADMIN_JWT_SECRET') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+    // ADMIN_JWT_SECRET 必须配置
+    const tokenSecret = Deno.env.get('ADMIN_JWT_SECRET');
+    if (!tokenSecret) {
+      return new Response(JSON.stringify({ success: false, message: '服务器配置错误：ADMIN_JWT_SECRET 未设置' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     const supabase = createSupabaseClient(true);
     const corsHeaders = getCorsHeaders(req);
 
@@ -128,11 +134,10 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ success: false, message: `用户名或密码错误 (剩余 ${MAX_LOGIN_ATTEMPTS - newAttempts} 次机会)` }), { headers: corsHeaders });
       }
     } else {
-      // 首次登录（无 password_hash），自动生成盐值并存储哈希
-      // 注意：这仅用于初始化，正常流程应该在创建管理员时就设置密码
-      const salt = Math.random().toString(36).substring(2);
-      const passwordHash = await hashPassword(password, salt);
-      await supabase.from('admins').update({ password_hash: passwordHash, salt }).eq('id', admin.id);
+      // 未设置密码的账号不允许登录
+      return new Response(JSON.stringify({ success: false, message: '账号未设置密码，请联系管理员初始化' }), {
+        headers: corsHeaders,
+      });
     }
 
     // 登录成功，重置失败次数和锁定状态

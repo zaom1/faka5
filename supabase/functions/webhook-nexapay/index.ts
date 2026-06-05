@@ -159,10 +159,33 @@ Deno.serve(async (req) => {
 
           if (availableCards && availableCards.length >= needCount) {
             // 标记卡密为已使用，关联订单 ID
-            await supabase
+            // 加上 WHERE status = 'available' 避免并发时重复分配同一张卡密
+            const cardIds = availableCards.map((c: any) => c.id);
+            const { error: updateError, count: updatedCount } = await supabase
               .from('cards')
               .update({ status: 'used', order_id: order.id })
-              .in('id', availableCards.map((c: any) => c.id));
+              .in('id', cardIds)
+              .eq('status', 'available')  // 只有仍然可用的卡密才会被分配
+              .select('id', { count: 'exact' });
+
+            if (updateError) throw updateError;
+
+            // 如果实际更新的卡密数量不足，说明发生了并发冲突
+            if ((updatedCount || 0) < needCount) {
+              console.error(`[webhook-nexapay] Card assignment race detected: needed ${needCount}, updated ${updatedCount}`);
+              // 回滚已分配的卡密
+              await supabase
+                .from('cards')
+                .update({ status: 'available', order_id: null })
+                .in('id', cardIds)
+                .eq('status', 'used')
+                .eq('order_id', order.id);
+
+              return new Response(JSON.stringify({ success: false, message: '卡密分配冲突，请重试' }), {
+                status: 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+              });
+            }
 
             // 更新订单的卡密内容（多张卡密用换行分隔）
             const cardContent = availableCards.map((c: any) => c.card_content).join('\n');

@@ -76,6 +76,9 @@ Deno.serve(async (req) => {
     const orderNo = 'ORD' + Date.now() + Math.random().toString(36).substr(2, 6).toUpperCase();
     const totalPrice = parseFloat((product.price * qty).toFixed(2));
 
+    // 生成随机 access_token，客户端用它来查询自己的订单
+    const accessToken = crypto.randomUUID();
+
     // 获取加密货币收款地址（仅 nexapay 支付方式需要）
     const cryptoAddress = Deno.env.get('NEXAPAY_CRYPTO_ADDRESS');
 
@@ -94,6 +97,7 @@ Deno.serve(async (req) => {
         payment_status: 'pending',
         status: 'pending',
         card_content: cardContent,
+        access_token: accessToken,
         crypto_address: cryptoAddress || null, // 未配置时不返回支付信息
       })
       .select()
@@ -130,6 +134,7 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: true,
         order: order,
+        accessToken: accessToken,  // 客户端保存此 token 用于查询
         payment: paymentResult,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

@@ -820,7 +820,7 @@
             const select = document.getElementById('productCategory');
             let html = '<option value="">选择分类</option>';
             categories.forEach(c => {
-                html += `<option value="${c.id}">${c.name}</option>`;
+                html += `<option value="${escapeHtml(String(c.id))}">${escapeHtml(c.name)}</option>`;
             });
             select.innerHTML = html;
         }
@@ -941,14 +941,22 @@
             
             cards.forEach(c => {
                 const statusBadge = c.status === 'available' ? '<span class="badge bg-success">可用</span>' : '<span class="badge bg-secondary">已用</span>';
-                tbody.innerHTML += `<tr>
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
                     <td>${c.id}</td>
-                    <td>${c.products?.name || '-'}</td>
-                    <td><code>${c.card_content.substring(0, 30)}...</code></td>
+                    <td>${escapeHtml(c.products?.name || '-')}</td>
+                    <td><code class="card-content-cell"></code></td>
                     <td>${statusBadge}</td>
                     <td>${new Date(c.created_at).toLocaleString()}</td>
                     <td><button class="btn btn-sm btn-danger" onclick="deleteCard(${c.id})"><i class="bi bi-trash"></i></button></td>
-                </tr>`;
+                `;
+                // use textContent for card content to avoid XSS
+                const codeEl = tr.querySelector('.card-content-cell');
+                if (codeEl) {
+                    const preview = (c.card_content || '').substring(0, 30);
+                    codeEl.textContent = preview + (c.card_content && c.card_content.length > 30 ? '...' : '');
+                }
+                tbody.appendChild(tr);
             });
         }
 
